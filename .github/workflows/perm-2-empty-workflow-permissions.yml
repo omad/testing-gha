@@ -1,0 +1,210 @@
+# Scenario 2: `permissions: {}` defined at the workflow level.
+#
+# An empty permissions map sets EVERY permission scope to "none" for the
+# entire workflow.  Individual jobs can still widen permissions by declaring
+# their own `permissions:` block, but they can never exceed what would have
+# been the default – they can only request what they explicitly list.
+#
+# This is considered the most restrictive / most secure baseline.
+#
+# GitHub docs:
+#   https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication#permissions-for-the-github_token
+
+name: "Perm 2 – Empty workflow-level permissions {}"
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+
+# ── ALL permissions explicitly set to none ────────────────────────────────────
+permissions: {}
+
+jobs:
+  # ── Job A: inherits the empty (no-access) workflow permissions ───────────────
+  all-denied:
+    name: "All permissions denied (workflow: {})"
+    runs-on: ubuntu-latest
+    # no job-level `permissions:` → inherits workflow `{}`
+    steps:
+      - name: Show environment and token capabilities
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "======================================================"
+          echo " Scenario : permissions: {} at workflow level"
+          echo "            no job-level override"
+          echo " Expected : virtually all API calls are denied"
+          echo "======================================================"
+          echo ""
+          echo "--- Runtime context ---"
+          echo "Repository : ${{ github.repository }}"
+          echo "Actor      : ${{ github.actor }}"
+          echo "Event      : ${{ github.event_name }}"
+          echo "Runner OS  : ${{ runner.os }}"
+          echo ""
+          echo "--- Token capability probes ---"
+          echo ""
+
+          probe() {
+            local label="$1"; shift
+            if "$@" >/dev/null 2>&1; then
+              echo "  ✅  $label"
+            else
+              echo "  ❌  $label"
+            fi
+          }
+
+          probe "metadata:read  – list repo topics" \
+            gh api "/repos/${{ github.repository }}/topics" --jq '.names'
+
+          probe "contents:read  – list repo refs" \
+            gh api "/repos/${{ github.repository }}/git/refs"
+
+          probe "issues:read    – list issues" \
+            gh api "/repos/${{ github.repository }}/issues"
+
+          probe "pull-requests:read – list PRs" \
+            gh api "/repos/${{ github.repository }}/pulls"
+
+          probe "actions:read   – list workflow runs" \
+            gh api "/repos/${{ github.repository }}/actions/runs"
+
+  # ── Job B: job-level permissions narrow-widens back to contents:read ─────────
+  job-adds-contents-read:
+    name: "Workflow: {}, job adds contents:read"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read        # ← job explicitly requests one scope back
+    steps:
+      - name: Show environment and token capabilities
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "======================================================"
+          echo " Scenario : permissions: {} at workflow level;"
+          echo "            job grants  contents: read"
+          echo " Expected : only contents:read calls succeed"
+          echo "======================================================"
+          echo ""
+          echo "--- Runtime context ---"
+          echo "Repository : ${{ github.repository }}"
+          echo "Actor      : ${{ github.actor }}"
+          echo "Event      : ${{ github.event_name }}"
+          echo ""
+          echo "--- Token capability probes ---"
+          echo ""
+
+          probe() {
+            local label="$1"; shift
+            if "$@" >/dev/null 2>&1; then
+              echo "  ✅  $label"
+            else
+              echo "  ❌  $label"
+            fi
+          }
+
+          probe "metadata:read  – list repo topics" \
+            gh api "/repos/${{ github.repository }}/topics" --jq '.names'
+
+          probe "contents:read  – list repo refs" \
+            gh api "/repos/${{ github.repository }}/git/refs"
+
+          probe "issues:read    – list issues (NOT granted)" \
+            gh api "/repos/${{ github.repository }}/issues"
+
+          probe "pull-requests:read – list PRs (NOT granted)" \
+            gh api "/repos/${{ github.repository }}/pulls"
+
+  # ── Job C: job-level adds contents:write ─────────────────────────────────────
+  job-adds-contents-write:
+    name: "Workflow: {}, job adds contents:write"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # ← write implies read
+    steps:
+      - name: Show environment and token capabilities
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "======================================================"
+          echo " Scenario : permissions: {} at workflow level;"
+          echo "            job grants  contents: write"
+          echo " Expected : contents read+write succeed, others denied"
+          echo "======================================================"
+          echo ""
+          echo "--- Runtime context ---"
+          echo "Repository : ${{ github.repository }}"
+          echo "Actor      : ${{ github.actor }}"
+          echo "Event      : ${{ github.event_name }}"
+          echo ""
+          echo "--- Token capability probes ---"
+          echo ""
+
+          probe() {
+            local label="$1"; shift
+            if "$@" >/dev/null 2>&1; then
+              echo "  ✅  $label"
+            else
+              echo "  ❌  $label"
+            fi
+          }
+
+          probe "metadata:read  – list repo topics" \
+            gh api "/repos/${{ github.repository }}/topics" --jq '.names'
+
+          probe "contents:read  – list repo refs" \
+            gh api "/repos/${{ github.repository }}/git/refs"
+
+          probe "issues:read    – list issues (NOT granted)" \
+            gh api "/repos/${{ github.repository }}/issues"
+
+          echo ""
+          echo "  ℹ️   contents:write is available but no destructive write"
+          echo "      is performed in this probe step."
+
+  # ── Job D: job-level adds issues:write ───────────────────────────────────────
+  job-adds-issues-write:
+    name: "Workflow: {}, job adds issues:write"
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write         # ← write implies read
+    steps:
+      - name: Show environment and token capabilities
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "======================================================"
+          echo " Scenario : permissions: {} at workflow level;"
+          echo "            job grants  issues: write"
+          echo " Expected : issues read+write succeed, others denied"
+          echo "======================================================"
+          echo ""
+          echo "--- Runtime context ---"
+          echo "Repository : ${{ github.repository }}"
+          echo "Actor      : ${{ github.actor }}"
+          echo "Event      : ${{ github.event_name }}"
+          echo ""
+          echo "--- Token capability probes ---"
+          echo ""
+
+          probe() {
+            local label="$1"; shift
+            if "$@" >/dev/null 2>&1; then
+              echo "  ✅  $label"
+            else
+              echo "  ❌  $label"
+            fi
+          }
+
+          probe "metadata:read  – list repo topics" \
+            gh api "/repos/${{ github.repository }}/topics" --jq '.names'
+
+          probe "contents:read  – list repo refs (NOT granted)" \
+            gh api "/repos/${{ github.repository }}/git/refs"
+
+          probe "issues:read    – list issues" \
+            gh api "/repos/${{ github.repository }}/issues"
+
+          probe "pull-requests:read – list PRs (NOT granted)" \
+            gh api "/repos/${{ github.repository }}/pulls"

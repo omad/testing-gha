@@ -1,0 +1,125 @@
+# Scenario 1: No `permissions:` key defined at the workflow level.
+#
+# When `permissions` is omitted entirely, the token inherits the permissions
+# granted to the GITHUB_TOKEN by the repository's "Actions > General" settings
+# (defaults to read access to all scopes for public repos, and the organisation
+# may impose additional restrictions).  Each job in this file shows what the
+# token can do with those inherited permissions.
+#
+# GitHub docs:
+#   https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication#permissions-for-the-github_token
+
+name: "Perm 1 – No workflow-level permissions"
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+
+# ── NO `permissions:` block here ──────────────────────────────────────────────
+
+jobs:
+  # ── Job A: also no job-level permissions (pure inheritance) ─────────────────
+  no-permissions-anywhere:
+    name: "No permissions defined anywhere"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show environment and token capabilities
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "======================================================"
+          echo " Scenario : No permissions defined at any level"
+          echo " Expected : Token inherits repo/org default settings"
+          echo "======================================================"
+          echo ""
+          echo "--- Runtime context ---"
+          echo "Repository : ${{ github.repository }}"
+          echo "Actor      : ${{ github.actor }}"
+          echo "Event      : ${{ github.event_name }}"
+          echo "Runner OS  : ${{ runner.os }}"
+          echo ""
+          echo "--- Token capability probes ---"
+          echo ""
+
+          probe() {
+            local label="$1"; shift
+            if "$@" >/dev/null 2>&1; then
+              echo "  ✅  $label"
+            else
+              echo "  ❌  $label"
+            fi
+          }
+
+          # metadata: read is almost always granted
+          probe "metadata:read  – list repo topics" \
+            gh api "/repos/${{ github.repository }}/topics" --jq '.names'
+
+          # contents: read
+          probe "contents:read  – list repo refs" \
+            gh api "/repos/${{ github.repository }}/git/refs"
+
+          # issues: read
+          probe "issues:read    – list issues" \
+            gh api "/repos/${{ github.repository }}/issues"
+
+          # pull-requests: read
+          probe "pull-requests:read – list PRs" \
+            gh api "/repos/${{ github.repository }}/pulls"
+
+          # actions: read
+          probe "actions:read   – list workflow runs" \
+            gh api "/repos/${{ github.repository }}/actions/runs"
+
+          echo ""
+          echo "--- Raw GITHUB_TOKEN permissions object (if available) ---"
+          gh api "/repos/${{ github.repository }}" \
+            --jq '"permissions: \(.permissions)"' 2>/dev/null || \
+            echo "  (permissions field not exposed for this token type)"
+
+  # ── Job B: job-level permissions added (write) ──────────────────────────────
+  job-level-write-override:
+    name: "No workflow permissions, job adds contents:write"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # ← added only at the job level
+    steps:
+      - name: Show environment and token capabilities
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "======================================================"
+          echo " Scenario : No workflow-level permissions;"
+          echo "            job grants  contents: write"
+          echo " Expected : Token has contents:write for this job only"
+          echo "======================================================"
+          echo ""
+          echo "--- Runtime context ---"
+          echo "Repository : ${{ github.repository }}"
+          echo "Actor      : ${{ github.actor }}"
+          echo "Event      : ${{ github.event_name }}"
+          echo ""
+          echo "--- Token capability probes ---"
+          echo ""
+
+          probe() {
+            local label="$1"; shift
+            if "$@" >/dev/null 2>&1; then
+              echo "  ✅  $label"
+            else
+              echo "  ❌  $label"
+            fi
+          }
+
+          probe "metadata:read  – list repo topics" \
+            gh api "/repos/${{ github.repository }}/topics" --jq '.names'
+
+          probe "contents:read  – list repo refs" \
+            gh api "/repos/${{ github.repository }}/git/refs"
+
+          probe "issues:read    – list issues" \
+            gh api "/repos/${{ github.repository }}/issues"
+
+          echo ""
+          echo "  ℹ️   contents:write is available but no destructive write"
+          echo "      is performed in this probe step."
